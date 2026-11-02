@@ -99,6 +99,7 @@ function battery(d){
         <div class="space-y-2">
           ${copyRow('ACCOUNT ID', d.accountId)}
           ${copyRow('PASSWORD', d.password)}
+          ${copyRow('SERVER', d.server)}
         </div>
       </div>
 
@@ -201,6 +202,7 @@ function renderAdmin(appEl){
       <input id="newName" placeholder="Full name" class="${inputCls}">
       <input id="newAccountId" placeholder="Account ID" autocomplete="off" class="${inputCls}">
       <input id="newPassword" placeholder="Password" autocomplete="off" class="${inputCls}">
+      <input id="newServer" placeholder="Server" autocomplete="off" class="${inputCls}">
       <input id="newBalance" type="number" min="0" max="${MAX_BALANCE}" step="0.5" value="100" class="${inputCls} mb-3">
       <button id="addBtn" class="w-full px-4 py-2.5 bg-trust-blue hover:bg-blue-600 rounded-xl text-xs font-bold">Add user</button>
     </div>
@@ -212,11 +214,13 @@ function renderAdmin(appEl){
     if (!name) return;
     const accountId = document.getElementById('newAccountId').value.trim();
     const password = document.getElementById('newPassword').value;
+    const server = document.getElementById('newServer').value.trim();
     const bal = Math.max(0, Math.min(MAX_BALANCE, parseFloat(document.getElementById('newBalance').value) || 0));
-    await setDoc(doc(db, 'users', slugify(name)), { name, accountId, password, balance: bal });
+    await setDoc(doc(db, 'users', slugify(name)), { name, accountId, password, server, balance: bal });
     document.getElementById('newName').value = '';
     document.getElementById('newAccountId').value = '';
     document.getElementById('newPassword').value = '';
+    document.getElementById('newServer').value = '';
   };
 
   const q = query(collection(db, 'users'), orderBy('name'));
@@ -260,6 +264,8 @@ function openEdit(id, d){
     <input id="editAccountId" value="${esc(d.accountId)}" autocomplete="off" class="${inputCls}">
     <label class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Password</label>
     <input id="editPassword" value="${esc(d.password)}" autocomplete="off" class="${inputCls}">
+    <label class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Server</label>
+    <input id="editServer" value="${esc(d.server)}" autocomplete="off" class="${inputCls}">
     <button id="saveDetails" class="w-full px-4 py-2.5 mb-4 bg-trust-blue hover:bg-blue-600 rounded-xl text-xs font-bold">Save details</button>
 
     <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Adjust energy</p>
@@ -295,7 +301,8 @@ function openEdit(id, d){
     await updateDoc(ref, {
       name,
       accountId: document.getElementById('editAccountId').value.trim(),
-      password: document.getElementById('editPassword').value
+      password: document.getElementById('editPassword').value,
+      server: document.getElementById('editServer').value.trim()
     });
     saveBtn.textContent = 'Saved!';
     setTimeout(() => { saveBtn.textContent = 'Save details'; }, 1500);
