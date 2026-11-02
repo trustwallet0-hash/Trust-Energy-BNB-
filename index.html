@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trust Energy</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'class', theme: { extend: { colors: {
+    trust: { blue:'#0500FF', cyan:'#00F0FF', cardBg:'#121622', cardBorder:'#1F293D' }
+  } } } }
+</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  body{font-family:'Inter',sans-serif;background-color:#06080C;background-image:radial-gradient(circle at 15% 15%,rgba(5,0,255,.15) 0%,transparent 40%),radial-gradient(circle at 85% 85%,rgba(0,240,255,.1) 0%,transparent 40%);}
+  .glow-g{box-shadow:0 0 25px rgba(0,230,118,.6)} .glow-y{box-shadow:0 0 25px rgba(255,179,0,.6)} .glow-r{box-shadow:0 0 25px rgba(255,61,0,.6)}
+</style>
+</head>
+<body class="min-h-screen text-slate-100 p-3 sm:p-6">
+  <header class="w-full max-w-xl mx-auto flex items-center justify-between pb-4 mb-6 border-b border-slate-800/80">
+    <div class="flex items-center space-x-2">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-trust-blue to-trust-cyan flex items-center justify-center">
+        <i class="fa-solid fa-shield-halved text-white text-base"></i>
+      </div>
+      <span class="font-extrabold tracking-wide text-sm text-white">TRUST ENERGY</span>
+    </div>
+  </header>
+  <main id="app" class="w-full max-w-xl mx-auto"><p class="text-center text-slate-500 py-16">Loading…</p></main>
+  <footer class="w-full max-w-xl mx-auto flex justify-center pt-10 pb-4">
+    <a href="#admin" aria-label="Admin settings" title="Admin settings" class="w-9 h-9 flex items-center justify-center text-slate-600 hover:text-trust-cyan rounded-lg"><i class="fa-solid fa-gear text-base"></i></a>
+  </footer>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
+  onSnapshot, collection, query, orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBoy8ir2ODB4QvfH0qMa_C7f_ItD3kzpGw",
+  authDomain: "trustwallet-energy.firebaseapp.com",
+  projectId: "trustwallet-energy",
+  storageBucket: "trustwallet-energy.firebasestorage.app",
+  messagingSenderId: "561138346019",
+  appId: "1:561138346019:web:344f5f9a251fd9ae18e996"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const MAX_BALANCE = 200;
+const ADMIN_PIN = '1234';
+let adminUnlocked = false;
+let unsub = null;
+
+function slugify(name){ return (name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'user-' + Date.now(); }
+function fmtUsd(n){ return '$' + Number(n).toFixed(2); }
+function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function tier(pct){ return pct < 25 ? 'r' : pct < 50 ? 'y' : 'g'; }
+function tierClasses(t){
+  return t === 'r' ? ['glow-r','from-rose-500','via-rose-600','to-rose-600']
+       : t === 'y' ? ['glow-y','from-amber-400','via-amber-500','to-amber-500']
+       : ['glow-g','from-trust-blue','via-trust-cyan','to-emerald-400'];
+}
+
+function copyRow(label, value){
+  const v = esc(value);
+  return `
+  <div class="flex items-center justify-between gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+    <div class="min-w-0">
+      <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">${label}</p>
+      <p class="text-sm font-bold text-white break-all">${v || '<span class="text-slate-600 font-normal">Not set</span>'}</p>
+    </div>
+    ${value ? `<button type="button" data-copy="${v}" class="copyBtn shrink-0 px-3 py-2 bg-slate-900 border border-slate-800 hover:border-trust-cyan rounded-xl text-xs font-semibold text-trust-cyan">
+      <i class="fa-regular fa-copy mr-1"></i><span>Copy</span></button>` : ''}
+  </div>`;
+}
+
+function battery(d){
+  const name = d.name, balance = Number(d.balance) || 0;
+  const pct = Math.max(0, Math.min(100, Math.round((balance/MAX_BALANCE)*100)));
+  const cls = tierClasses(tier(pct)).join(' ');
+  const initials = (name||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  return `
+  <div class="bg-trust-cardBg border border-trust-cardBorder rounded-3xl overflow-hidden shadow-2xl">
+    <div class="h-1.5 w-full bg-gradient-to-r ${cls}"></div>
+    <div class="p-6 sm:p-8">
+      <div class="mb-6 p-4 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-trust-cyan font-bold border border-slate-700">${esc(initials)}</div>
+        <div><p class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">User account</p>
+        <p class="text-base font-bold">Welcome back <span class="text-trust-cyan">${esc(name)}</span></p></div>
+      </div>
+
+      <div class="mb-6">
+        <span class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2.5">ACCOUNT DETAILS</span>
+        <div class="space-y-2">
+          ${copyRow('ACCOUNT ID', d.accountId)}
+          ${copyRow('PASSWORD', d.password)}
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between mb-2.5">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">BNB ENERGY LEVEL</span>
+        <span class="text-sm font-extrabold text-trust-cyan">${pct}%</span>
+      </div>
+      <div class="relative w-full h-36 bg-slate-950 rounded-3xl border-4 border-slate-700/80 p-2.5 flex items-center overflow-hidden">
+        <div class="absolute -right-3 top-1/2 -translate-y-1/2 w-4 h-12 bg-slate-700/90 rounded-r-lg border-2 border-l-0 border-slate-600"></div>
+        <div class="h-full bg-gradient-to-r ${cls} rounded-2xl transition-all duration-700" style="width:${pct}%"></div>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div class="bg-slate-950/85 px-4 py-1.5 rounded-full border border-slate-700/50"><span class="text-sm font-bold">${pct}% charged</span></div>
+        </div>
+      </div>
+      <div class="mt-6 bg-slate-900/70 rounded-2xl p-5 border border-slate-800">
+        <span class="text-xs font-semibold text-slate-400">Energy balance</span>
+        <div><span class="text-3xl font-extrabold text-white">${fmtUsd(balance)}</span><span class="text-xs text-slate-400 ml-1">USD</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Copy buttons (works on all pages)
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(_){}
+    ta.remove();
+    return ok;
+  }
+}
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copyBtn');
+  if (!btn) return;
+  const ok = await copyText(btn.dataset.copy);
+  const label = btn.querySelector('span');
+  const old = label.textContent;
+  label.textContent = ok ? 'Copied!' : 'Failed';
+  setTimeout(() => { label.textContent = old; }, 1500);
+});
+
+function slug(){ return decodeURIComponent(location.hash.slice(1)); }
+function linkFor(s){ return location.origin + location.pathname + '#' + s; }
+
+function route(){
+  if (unsub) { unsub(); unsub = null; }
+  const h = slug();
+  const appEl = document.getElementById('app');
+  if (h === 'admin') renderAdmin(appEl);
+  else if (h) renderUser(appEl, h);
+  else renderHome(appEl);
+}
+
+function renderHome(appEl){
+  appEl.innerHTML = `<div class="text-center py-16">
+    <i class="fa-solid fa-bolt text-trust-cyan text-3xl mb-4"></i>
+    <p class="text-slate-300">Open your personal link to view your energy balance.</p>
+  </div>`;
+}
+
+function renderUser(appEl, s){
+  appEl.innerHTML = `<p class="text-center text-slate-500 py-16">Loading…</p>`;
+  unsub = onSnapshot(doc(db, 'users', s),
+    snap => {
+      if (!snap.exists()){ appEl.innerHTML = `<p class="text-center text-slate-400 py-16">No dashboard found for this link.</p>`; return; }
+      appEl.innerHTML = battery(snap.data());
+    },
+    () => { appEl.innerHTML = `<p class="text-center text-rose-400 py-16">Could not load this dashboard.</p>`; }
+  );
+}
+
+const inputCls = 'w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm mb-2';
+
+function renderAdmin(appEl){
+  if (!adminUnlocked){
+    appEl.innerHTML = `<div class="max-w-xs mx-auto bg-trust-cardBg border border-trust-cardBorder rounded-3xl p-6 mt-12">
+      <div class="flex items-center gap-2 mb-4"><i class="fa-solid fa-lock text-trust-cyan"></i><h3 class="font-bold text-sm">Enter admin PIN</h3></div>
+      <input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] mb-2">
+      <p id="pinErr" class="hidden text-xs text-rose-400 mb-2">Incorrect PIN.</p>
+      <button id="pinGo" class="w-full px-4 py-2.5 bg-trust-blue hover:bg-blue-600 rounded-xl text-xs font-bold">Unlock</button>
+    </div>`;
+    const pin = document.getElementById('pin');
+    const go = () => {
+      if (pin.value === ADMIN_PIN){ adminUnlocked = true; renderAdmin(appEl); }
+      else { document.getElementById('pinErr').classList.remove('hidden'); pin.value=''; }
+    };
+    document.getElementById('pinGo').onclick = go;
+    pin.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    pin.focus();
+    return;
+  }
+
+  appEl.innerHTML = `
+    <div class="bg-trust-cardBg border border-trust-cardBorder rounded-3xl p-6 mb-4">
+      <h2 class="text-sm font-bold mb-4"><i class="fa-solid fa-user-plus text-trust-cyan mr-1"></i>Add a user</h2>
+      <input id="newName" placeholder="Full name" class="${inputCls}">
+      <input id="newAccountId" placeholder="Account ID" autocomplete="off" class="${inputCls}">
+      <input id="newPassword" placeholder="Password" autocomplete="off" class="${inputCls}">
+      <input id="newBalance" type="number" min="0" max="${MAX_BALANCE}" step="0.5" value="100" class="${inputCls} mb-3">
+      <button id="addBtn" class="w-full px-4 py-2.5 bg-trust-blue hover:bg-blue-600 rounded-xl text-xs font-bold">Add user</button>
+    </div>
+    <div id="editBox"></div>
+    <div id="userList" class="space-y-2"></div>`;
+
+  document.getElementById('addBtn').onclick = async () => {
+    const name = document.getElementById('newName').value.trim();
+    if (!name) return;
+    const accountId = document.getElementById('newAccountId').value.trim();
+    const password = document.getElementById('newPassword').value;
+    const bal = Math.max(0, Math.min(MAX_BALANCE, parseFloat(document.getElementById('newBalance').value) || 0));
+    await setDoc(doc(db, 'users', slugify(name)), { name, accountId, password, balance: bal });
+    document.getElementById('newName').value = '';
+    document.getElementById('newAccountId').value = '';
+    document.getElementById('newPassword').value = '';
+  };
+
+  const q = query(collection(db, 'users'), orderBy('name'));
+  unsub = onSnapshot(q, qs => {
+    const list = document.getElementById('userList');
+    if (!list) return;
+    if (qs.empty){ list.innerHTML = `<p class="text-slate-500 text-xs text-center py-6">No users yet.</p>`; return; }
+    list.innerHTML = qs.docs.map(d => {
+      const data = d.data();
+      const pct = Math.max(0, Math.min(100, Math.round((data.balance/MAX_BALANCE)*100)));
+      return `<div class="bg-trust-cardBg border border-trust-cardBorder rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <p class="font-bold text-sm truncate">${esc(data.name)}</p>
+          <p class="text-xs text-slate-400 truncate">ID: ${esc(data.accountId) || '—'} · ${pct}% · ${fmtUsd(data.balance)}</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button data-id="${esc(d.id)}" class="editU px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs"><i class="fa-solid fa-sliders"></i></button>
+          <button data-id="${esc(d.id)}" class="linkU px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs"><i class="fa-solid fa-link"></i></button>
+          <button data-id="${esc(d.id)}" class="delU px-3 py-2 bg-slate-900 border border-rose-900 text-rose-400 rounded-xl text-xs"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.editU').forEach(b => b.onclick = () => openEdit(b.dataset.id, qs.docs.find(d=>d.id===b.dataset.id).data()));
+    list.querySelectorAll('.delU').forEach(b => b.onclick = () => { if(confirm('Delete this user?')) deleteDoc(doc(db,'users',b.dataset.id)); });
+    list.querySelectorAll('.linkU').forEach(b => b.onclick = () => {
+      navigator.clipboard?.writeText(linkFor(b.dataset.id)).catch(()=>{});
+      alert('Link copied:\n' + linkFor(b.dataset.id));
+    });
+  });
+}
+
+function openEdit(id, d){
+  const box = document.getElementById('editBox');
+  const pct = Math.max(0, Math.min(100, Math.round((d.balance/MAX_BALANCE)*100)));
+  box.innerHTML = `<div class="bg-trust-cardBg border border-trust-cardBorder border-2 rounded-3xl p-5 mb-4">
+    <p class="text-sm font-bold mb-3">${esc(d.name)} <span class="text-slate-400 font-normal text-xs">— edit user</span></p>
+
+    <label class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Name</label>
+    <input id="editName" value="${esc(d.name)}" class="${inputCls}">
+    <label class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Account ID</label>
+    <input id="editAccountId" value="${esc(d.accountId)}" autocomplete="off" class="${inputCls}">
+    <label class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Password</label>
+    <input id="editPassword" value="${esc(d.password)}" autocomplete="off" class="${inputCls}">
+    <button id="saveDetails" class="w-full px-4 py-2.5 mb-4 bg-trust-blue hover:bg-blue-600 rounded-xl text-xs font-bold">Save details</button>
+
+    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Adjust energy</p>
+    <input id="editSlider" type="range" min="0" max="${MAX_BALANCE}" step="1" value="${d.balance}" class="w-full accent-trust-cyan mb-1">
+    <div class="flex justify-between text-xs text-slate-400 mb-3"><span id="editReadout">${pct}% (${fmtUsd(d.balance)})</span></div>
+    <div class="grid grid-cols-4 gap-2 mb-3">
+      <button data-d="-10" class="px-2 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs">-$10</button>
+      <button data-d="10" class="px-2 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs">+$10</button>
+      <button data-p="0" class="px-2 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs">0%</button>
+      <button data-p="1" class="px-2 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs">100%</button>
+    </div>
+    <button id="closeEdit" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold">Done</button>
+  </div>`;
+  const ref = doc(db, 'users', id);
+  let val = d.balance;
+  const readout = document.getElementById('editReadout');
+  const slider = document.getElementById('editSlider');
+  const push = (v) => {
+    val = Math.max(0, Math.min(MAX_BALANCE, v));
+    const p = Math.round((val/MAX_BALANCE)*100);
+    readout.textContent = p + '% (' + fmtUsd(val) + ')';
+    slider.value = val;
+    updateDoc(ref, { balance: val });
+  };
+  slider.addEventListener('change', () => push(parseFloat(slider.value)));
+  box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => push(val + parseFloat(b.dataset.d)));
+  box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => push(MAX_BALANCE * parseFloat(b.dataset.p)));
+
+  const saveBtn = document.getElementById('saveDetails');
+  saveBtn.onclick = async () => {
+    const name = document.getElementById('editName').value.trim();
+    if (!name) return;
+    await updateDoc(ref, {
+      name,
+      accountId: document.getElementById('editAccountId').value.trim(),
+      password: document.getElementById('editPassword').value
+    });
+    saveBtn.textContent = 'Saved!';
+    setTimeout(() => { saveBtn.textContent = 'Save details'; }, 1500);
+  };
+  document.getElementById('closeEdit').onclick = () => { box.innerHTML = ''; };
+}
+
+route();
+window.addEventListener('hashchange', route);
+</script>
+</body>
+</html>
