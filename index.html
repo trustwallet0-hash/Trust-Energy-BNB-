@@ -37,10 +37,17 @@
     <a href="#admin" aria-label="Admin settings" title="Admin settings" class="w-9 h-9 flex items-center justify-center text-slate-600 hover:text-trust-cyan rounded-lg"><i class="fa-solid fa-gear text-base"></i></a>
   </footer>
 
+<script>
+  setTimeout(function(){
+    if (!window.__appReady) {
+      document.getElementById('app').innerHTML = '<div class="text-center py-16 px-4"><p style="color:#fb7185;font-weight:600;margin-bottom:8px">The page could not start.</p><p style="color:#94a3b8;font-size:14px">A required script (Firebase) did not load. Turn off any ad blocker, check your connection, and refresh.</p></div>';
+    }
+  }, 10000);
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
+  getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
   onSnapshot, collection, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -53,7 +60,7 @@ const firebaseConfig = {
   appId: "1:561138346019:web:344f5f9a251fd9ae18e996"
 };
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 
 const MAX_BALANCE = 200;
 const ADMIN_PIN = '1234';
@@ -183,12 +190,17 @@ function renderHome(appEl){
 
 function renderUser(appEl, s){
   appEl.innerHTML = `<p class="text-center text-slate-500 py-16">Loading…</p>`;
+  let got = false;
+  setTimeout(() => {
+    if (!got && slug() === s) appEl.innerHTML = `<div class="text-center py-16 px-4"><p class="text-rose-400 font-semibold mb-2">Still can't reach the database.</p><p class="text-slate-400 text-sm">Check your internet connection and refresh. If it keeps happening, the Firestore database or its rules may not be set up.</p></div>`;
+  }, 12000);
   unsub = onSnapshot(doc(db, 'users', s),
     snap => {
+      got = true;
       if (!snap.exists()){ appEl.innerHTML = `<p class="text-center text-slate-400 py-16">No dashboard found for this link.</p>`; return; }
       appEl.innerHTML = battery(snap.data());
     },
-    () => { appEl.innerHTML = `<p class="text-center text-rose-400 py-16">Could not load this dashboard.</p>`; }
+    () => { got = true; appEl.innerHTML = `<p class="text-center text-rose-400 py-16">Could not load this dashboard.</p>`; }
   );
 }
 
@@ -272,6 +284,9 @@ function renderAdmin(appEl){
       navigator.clipboard?.writeText(linkFor(b.dataset.id)).catch(()=>{});
       alert('Link copied:\n' + linkFor(b.dataset.id));
     });
+  }, err => {
+    const list = document.getElementById('userList');
+    if (list) list.innerHTML = `<p class="text-rose-400 text-xs text-center py-6">Could not load users: ${esc(err.message)}</p>`;
   });
 }
 
@@ -316,29 +331,4 @@ function openEdit(id, d){
     updateDoc(ref, { balance: val });
   };
   slider.addEventListener('change', () => push(parseFloat(slider.value)));
-  box.querySelectorAll('[data-d]').forEach(b => b.onclick = () => push(val + parseFloat(b.dataset.d)));
-  box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => push(MAX_BALANCE * parseFloat(b.dataset.p)));
-
-  let conn = !!d.connected;
-  const connBtn = document.getElementById('toggleConn');
-  const paintConn = () => {
-    connBtn.innerHTML = statusPill(conn) +
-      `<span class="text-xs text-slate-400">Tap to ${conn ? 'disconnect' : 'connect'}</span>`;
-  };
-  paintConn();
-  connBtn.onclick = () => { conn = !conn; paintConn(); updateDoc(ref, { connected: conn }); };
-
-  const saveBtn = document.getElementById('saveDetails');
-  saveBtn.onclick = async () => {
-    const name = document.getElementById('editName').value.trim();
-    if (!name) return;
-    await updateDoc(ref, {
-      name,
-      accountId: document.getElementById('editAccountId').value.trim(),
-      password: document.getElementById('editPassword').value,
-      server: document.getElementById('editServer').value.trim()
-    });
-    saveBtn.textContent = 'Saved!';
-    setTimeout(() => { saveBtn.textContent = 'Save details'; }, 1500);
-  };
-  document.getElementById('closeEdit'
+  box.querySelectorAll('[data-d]').forEach(b => b.onc
